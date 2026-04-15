@@ -133,6 +133,43 @@ GitHub Actions pipeline (`.github/workflows/ci.yml`) runs on every push to `main
 3. Scan images with **Trivy** for known CVEs
 4. Push versioned images to **GHCR** (`ghcr.io/<owner>/iot-producer-service`, `ghcr.io/<owner>/iot-consumer-service`)
 
+## Notes
+
+> Development observations worth remembering — likely interview topics.
+
+### Kafka listener conflict between local and container environments
+
+**The conflict**
+
+`KAFKA_ADVERTISED_LISTENERS` tells Kafka what address to advertise to clients. When set to `kafka:9092` (container hostname), local Spring Boot can't resolve it. When set to `localhost:9092`, containers can't reach each other because `localhost` inside a container refers to the container itself, not the Kafka container.
+
+**The fix**
+
+Configure two listeners on different ports — one for each network context:
+
+```yaml
+KAFKA_LISTENERS: INTERNAL://0.0.0.0:29092,EXTERNAL://0.0.0.0:9092
+KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:9092
+KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+```
+
+- Local dev connects to `localhost:9092` (EXTERNAL listener)
+- Containers connect to `kafka:29092` (INTERNAL listener)
+
+**The standard practice**
+
+Use Spring Boot's environment variable substitution to make `bootstrap-servers` context-aware:
+
+```yaml
+kafka:
+  bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+```
+
+In `docker-compose.yml`, set `KAFKA_BOOTSTRAP_SERVERS: kafka:29092` for the application containers. Locally, no env var is set, so the default `localhost:9092` is used automatically.
+
+---
+
 ## Key Design Decisions
 
 **Why Kafka between Producer and storage?**
