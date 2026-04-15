@@ -1,0 +1,29 @@
+spring:
+  application:
+    name: iot-consumer-service
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: iot-consumer-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "com.example.consumer.model"
+        spring.json.value.default.type: "com.example.consumer.model.SensorData"
+
+  data:
+    mongodb:
+      uri: ${MONGODB_URI:mongodb://localhost:27017/iot}
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: 6379
+
+server:
+  port: 8082
+
+logging:
+  level:
+    root: INFO
+    com.example.consumer: INFO

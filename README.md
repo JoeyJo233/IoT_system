@@ -5,19 +5,19 @@ A high-throughput IoT sensor data pipeline built with a **Producer/Consumer micr
 ## Architecture
 
 ```
-[Sensor Simulator]
-  temp x2  (10s)
-  humidity x2 (5s)       ──►  [Kafka]  ──►  [Consumer Service]  ──►  [MongoDB]
-  pressure x2  (2s)              │                                        │
-  vibration x2 (500ms)           │                                    [Redis Cache]
-                                 │                                        │
-                                 └─────────────────────────────────►  [REST API]
+[Producer Service]
+  temp x2     (10s)
+  humidity x2  (5s)    ──►  [Kafka]  ──►  [Consumer Service]  ──►  [MongoDB]
+  pressure x2  (2s)                              │                      │
+  vibration x2 (500ms)                       [Redis Cache]              │
+                                                  │                     │
+                                             [REST API] ◄───────────────┘
 ```
 
-- **Producer**: 8 independent sensor threads push JSON events to the `iot-sensor-data` Kafka topic at different sampling intervals
+- **Producer**: 8 independent sensor threads push JSON events to the `iot-sensor-data` Kafka topic
 - **Kafka**: decouples ingestion from storage, buffering events during DB slowdowns
-- **Consumer**: reads from Kafka, writes to MongoDB, caches recent readings in Redis
-- **REST API**: exposes sensor data query endpoints backed by Redis + MongoDB
+- **Consumer**: reads from Kafka, writes to MongoDB, caches latest readings in Redis
+- **REST API**: exposes query endpoints backed by Redis (hot path) + MongoDB (history)
 
 ## Tech Stack
 
@@ -26,64 +26,84 @@ A high-throughput IoT sensor data pipeline built with a **Producer/Consumer micr
 | Language | Java 17 |
 | Framework | Spring Boot 4.0.2 |
 | Message Broker | Apache Kafka (Confluent 7.5.0) |
-| Cache | Redis |
-| Database | MongoDB |
+| Cache | Redis 7 |
+| Database | MongoDB 7 |
 | Containerization | Docker / Docker Compose |
 | CI/CD | GitHub Actions |
 | Image Security | Trivy |
 | Container Registry | GitHub Container Registry (GHCR) |
 
+## Project Structure
+
+```
+.
+├── producer-service/               # Sensor simulator — publishes to Kafka
+│   ├── src/main/java/com/example/producer/
+│   │   ├── ProducerApplication.java
+│   │   ├── model/SensorData.java
+│   │   └── simulator/SensorSimulator.java
+│   ├── Dockerfile
+│   └── pom.xml
+│
+├── consumer-service/               # Kafka consumer — stores + serves data
+│   ├── src/main/java/com/example/consumer/
+│   │   ├── ConsumerApplication.java
+│   │   ├── model/SensorData.java
+│   │   ├── consumer/SensorDataConsumer.java
+│   │   ├── repository/SensorDataRepository.java
+│   │   └── controller/SensorController.java
+│   ├── Dockerfile
+│   └── pom.xml
+│
+├── docker-compose.yml              # Runs all 6 services together
+└── README.md
+```
+
 ## Getting Started
 
 ### Prerequisites
 
-- Java 17+
-- Maven 3.8+
 - Docker & Docker Compose
 
-### Run locally
-
-**1. Start infrastructure**
+### Run the full system
 
 ```bash
-docker-compose up -d
+docker-compose up --build
 ```
 
-This starts Kafka and Zookeeper. Redis and MongoDB are also defined in the compose file.
+This starts all 6 containers: Zookeeper, Kafka, Redis, MongoDB, Producer, Consumer.
 
-**2. Run the application**
+### Run services individually (for development)
 
 ```bash
-./mvnw spring-boot:run
+# Start infrastructure only
+docker-compose up -d zookeeper kafka redis mongodb
+
+# Run Producer
+cd producer-service && ./mvnw spring-boot:run
+
+# Run Consumer
+cd consumer-service && ./mvnw spring-boot:run
 ```
 
-The Producer starts automatically and begins publishing sensor events to Kafka.
-
-**3. Verify messages are flowing**
+### Verify messages are flowing
 
 ```bash
-# consume from the Kafka topic directly
 docker exec -it kafka kafka-console-consumer \
   --bootstrap-server localhost:9092 \
   --topic iot-sensor-data \
   --from-beginning
 ```
 
-### Configuration
+## REST API
 
-All configuration is in `src/main/resources/application.yaml`:
+Base URL: `http://localhost:8082/api/sensors`
 
-```yaml
-spring:
-  kafka:
-    bootstrap-servers: localhost:9092
-  data:
-    mongodb:
-      uri: mongodb://localhost:27017/iot
-  redis:
-    host: localhost
-    port: 6379
-```
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/{sensorId}/latest` | Latest reading (Redis cache → MongoDB fallback) |
+| GET | `/{sensorId}/history` | Full historical readings from MongoDB |
+| GET | `/type/{sensorType}` | All readings by sensor type |
 
 ## Sensors
 
@@ -97,45 +117,26 @@ spring:
 ## Testing
 
 ```bash
-# Run all tests
-./mvnw test
+# Producer tests
+cd producer-service && ./mvnw test
 
-# Unit tests only
-./mvnw test -Dtest="**/unit/**"
-
-# Integration tests only
-./mvnw test -Dtest="**/Integration/**"
+# Consumer tests
+cd consumer-service && ./mvnw test
 ```
 
 ## CI/CD
 
 GitHub Actions pipeline (`.github/workflows/ci.yml`) runs on every push to `main`:
 
-1. Run unit and integration tests
-2. Build Docker image
-3. Scan image with **Trivy** for known CVEs
-4. Push versioned image to **GHCR** (`ghcr.io/<owner>/iot-sensor-system`)
-
-## Project Structure
-
-```
-src/
-├── main/java/com/example/demo/
-│   ├── DemoApplication.java         # Entry point
-│   ├── SensorData.java              # Data model
-│   ├── SensorSimulator_new.java     # Producer: 8 sensor threads
-│   ├── consumer/                    # Kafka consumer (in progress)
-│   ├── repository/                  # MongoDB repositories (in progress)
-│   └── controller/                  # REST API endpoints (in progress)
-└── test/java/com/example/demo/
-    ├── unit/SensorDataTest.java
-    └── Integration/SensorSimulatorTest.java
-```
+1. Run tests for both services
+2. Build Docker images
+3. Scan images with **Trivy** for known CVEs
+4. Push versioned images to **GHCR** (`ghcr.io/<owner>/iot-producer-service`, `ghcr.io/<owner>/iot-consumer-service`)
 
 ## Key Design Decisions
 
 **Why Kafka between Producer and storage?**
-Direct synchronous writes to MongoDB under high-frequency sensor data (vibration sensors at 500ms) would block the Producer thread on DB latency. Kafka acts as a durable buffer — the Producer never waits on storage, and the Consumer can apply backpressure independently.
+Direct synchronous writes to MongoDB under high-frequency sensor data (vibration sensors at 500ms) would block the Producer on DB latency. Kafka acts as a durable buffer — the Producer never waits on storage, and the Consumer applies backpressure independently.
 
 **Why Redis alongside MongoDB?**
 Latest readings per sensor are queried far more frequently than historical data. Redis caches the most recent value per `sensorId`, reducing MongoDB read load for the common case.
