@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.*;
@@ -72,8 +73,9 @@ public class SensorSimulator {
                             if (ex != null) {
                                 System.err.printf("[%s] send failed: %s%n", sensorId, ex.getMessage());
                             } else {
-                                System.out.printf("[%s] sent: %.2f %s @ partition=%d offset=%d%n",
-                                        sensorId, data.getValue(), data.getUnit(),
+                                System.out.printf("[%s] %s sent: %.2f %s @ partition=%d offset=%d%n",
+                                        sensorId, Instant.ofEpochMilli(data.getTimestamp()),
+                                        data.getValue(), data.getUnit(),
                                         result.getRecordMetadata().partition(),
                                         result.getRecordMetadata().offset());
                             }
