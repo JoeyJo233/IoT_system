@@ -71,6 +71,11 @@ public class SensorSimulator {
                         .whenComplete((result, ex) -> {
                             if (ex != null) {
                                 System.err.printf("[%s] send failed: %s%n", sensorId, ex.getMessage());
+                            } else {
+                                System.out.printf("[%s] sent: %.2f %s @ partition=%d offset=%d%n",
+                                        sensorId, data.getValue(), data.getUnit(),
+                                        result.getRecordMetadata().partition(),
+                                        result.getRecordMetadata().offset());
                             }
                         });
 
