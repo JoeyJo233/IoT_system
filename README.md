@@ -56,6 +56,8 @@ A high-throughput IoT sensor data pipeline built with a **Producer/Consumer micr
 │   └── pom.xml
 │
 ├── docker-compose.yml              # Kafka (KRaft), Redis, MongoDB, Producer, Consumer
+├── doc/                            # Design and planning documents
+│   └── Web_UI.md                   # Web UI design, tech choices, TODOs
 └── README.md
 ```
 
