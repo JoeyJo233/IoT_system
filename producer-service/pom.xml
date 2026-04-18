@@ -24,6 +24,18 @@
             <artifactId>spring-boot-starter-kafka</artifactId>
         </dependency>
 
+        <!--
+          Spring Kafka 4.0.2's JsonSerializer/JsonDeserializer still reference
+          Jackson 2 (`com.fasterxml.jackson.*`). Spring Boot 4 ships only
+          Jackson 3 (`tools.jackson.*`), so we pin Jackson 2 explicitly. The
+          two package trees coexist without conflict.
+        -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>2.18.2</version>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-devtools</artifactId>

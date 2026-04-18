@@ -5,7 +5,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.data.redis.serializer.GenericJacksonJsonRedisSerializer;
+import org.springframework.data.redis.serializer.JacksonJsonRedisSerializer;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
 
 @Configuration
@@ -18,8 +18,10 @@ public class RedisConfig {
         RedisTemplate<String, SensorData> template = new RedisTemplate<>();
         template.setConnectionFactory(connectionFactory);
 
-        GenericJacksonJsonRedisSerializer valueSerializer =
-                GenericJacksonJsonRedisSerializer.builder().build();
+        // Bind the serializer to SensorData so reads deserialize to the correct
+        // type instead of LinkedHashMap.
+        JacksonJsonRedisSerializer<SensorData> valueSerializer =
+                new JacksonJsonRedisSerializer<>(SensorData.class);
 
         template.setKeySerializer(new StringRedisSerializer());
         template.setValueSerializer(valueSerializer);
