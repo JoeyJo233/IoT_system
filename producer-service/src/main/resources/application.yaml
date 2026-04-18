@@ -9,6 +9,8 @@ spring:
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
       acks: 1
       retries: 3
+      properties:
+        spring.json.add.type.headers: false
 
 server:
   port: 8081
