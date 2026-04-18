@@ -29,9 +29,6 @@ A high-throughput IoT sensor data pipeline built with a **Producer/Consumer micr
 | Cache | Redis 7 |
 | Database | MongoDB 7 |
 | Containerization | Docker / Docker Compose |
-| CI/CD | GitHub Actions |
-| Image Security | Trivy |
-| Container Registry | GitHub Container Registry (GHCR) |
 
 ## Project Structure
 
@@ -55,7 +52,7 @@ A high-throughput IoT sensor data pipeline built with a **Producer/Consumer micr
 │   ├── Dockerfile
 │   └── pom.xml
 │
-├── docker-compose.yml              # Runs all 6 services together
+├── docker-compose.yml              # Kafka (KRaft), Redis, MongoDB, Producer, Consumer
 └── README.md
 ```
 
@@ -71,13 +68,13 @@ A high-throughput IoT sensor data pipeline built with a **Producer/Consumer micr
 docker-compose up --build
 ```
 
-This starts all 6 containers: Zookeeper, Kafka, Redis, MongoDB, Producer, Consumer.
+This starts 5 containers: Kafka (KRaft mode, no Zookeeper), Redis, MongoDB, Producer, Consumer.
 
 ### Run services individually (for development)
 
 ```bash
 # Start infrastructure only
-docker-compose up -d zookeeper kafka redis mongodb
+docker-compose up -d kafka redis mongodb
 
 # Run Producer
 cd producer-service && ./mvnw spring-boot:run
@@ -123,15 +120,6 @@ cd producer-service && ./mvnw test
 # Consumer tests
 cd consumer-service && ./mvnw test
 ```
-
-## CI/CD
-
-GitHub Actions pipeline (`.github/workflows/ci.yml`) runs on every push to `main`:
-
-1. Run tests for both services
-2. Build Docker images
-3. Scan images with **Trivy** for known CVEs
-4. Push versioned images to **GHCR** (`ghcr.io/<owner>/iot-producer-service`, `ghcr.io/<owner>/iot-consumer-service`)
 
 ## Notes
 
