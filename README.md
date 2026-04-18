@@ -29,6 +29,9 @@ A high-throughput IoT sensor data pipeline built with a **Producer/Consumer micr
 | Cache | Redis 7 |
 | Database | MongoDB 7 |
 | Containerization | Docker / Docker Compose |
+| CI/CD | GitHub Actions |
+| Image Security | Trivy |
+| Container Registry | GitHub Container Registry (GHCR) |
 
 ## Project Structure
 
@@ -120,6 +123,17 @@ cd producer-service && ./mvnw test
 # Consumer tests
 cd consumer-service && ./mvnw test
 ```
+
+## CI/CD
+
+GitHub Actions pipeline (`.github/workflows/ci.yml`) runs on every push to `main` and on pull requests:
+
+1. Run unit tests for both services (matrix build)
+2. On `main` only: build Docker images via Buildx
+3. Scan images with **Trivy** (fails on unfixed CRITICAL/HIGH CVEs)
+4. Push versioned + `latest` tags to **GHCR** (`ghcr.io/<owner>/iot-producer-service`, `ghcr.io/<owner>/iot-consumer-service`)
+
+The Spring Boot context-loading test (`ConsumerApplicationTests`) is `@Disabled` in CI because it needs live Kafka/Mongo/Redis; run it locally or wire in Testcontainers to re-enable.
 
 ## Notes
 
