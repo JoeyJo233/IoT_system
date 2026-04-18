@@ -24,7 +24,7 @@ A high-throughput IoT sensor data pipeline built with a **Producer/Consumer micr
 | Layer | Technology |
 |-------|-----------|
 | Language | Java 17 |
-| Framework | Spring Boot 4.0.5 |
+| Framework | Spring Boot 4.0.6 |
 | Message Broker | Apache Kafka (Confluent 7.5.0) |
 | Cache | Redis 7 |
 | Database | MongoDB 7 |
