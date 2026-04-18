@@ -4,9 +4,12 @@ import com.example.consumer.model.SensorData;
 import com.example.consumer.repository.SensorDataRepository;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.kafka.support.KafkaHeaders;
+import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
+import java.time.Instant;
 
 @Service
 public class SensorDataConsumer {
@@ -24,12 +27,17 @@ public class SensorDataConsumer {
     }
 
     @KafkaListener(topics = "iot-sensor-data", groupId = "iot-consumer-group")
-    public void consume(SensorData data) {
-        // Persist to MongoDB
+    public void consume(SensorData data,
+                        @Header(KafkaHeaders.RECEIVED_PARTITION) int partition,
+                        @Header(KafkaHeaders.OFFSET) long offset) {
+
         repository.save(data);
 
-        // Cache latest reading per sensor in Redis
         String cacheKey = CACHE_PREFIX + data.getSensorId();
         redisTemplate.opsForValue().set(cacheKey, data, CACHE_TTL);
+
+        System.out.printf("[%s] %s received: %.2f %s @ partition=%d offset=%d%n",
+                data.getSensorId(), Instant.ofEpochMilli(data.getTimestamp()),
+                data.getValue(), data.getUnit(), partition, offset);
     }
 }
