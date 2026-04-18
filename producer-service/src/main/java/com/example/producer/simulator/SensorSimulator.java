@@ -1,6 +1,8 @@
 package com.example.producer.simulator;
 
 import com.example.producer.model.SensorData;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import jakarta.annotation.PostConstruct;
@@ -15,23 +17,26 @@ import java.util.concurrent.*;
  * IoT sensor simulator.
  * Each sensor runs independently with its own sampling interval.
  */
+@Slf4j
 @Service
 public class SensorSimulator {
 
     private final KafkaTemplate<String, SensorData> kafkaTemplate;
     private final ScheduledExecutorService scheduler;
     private final List<ScheduledFuture<?>> scheduledTasks;
-    private static final String TOPIC = "iot-sensor-data";
+    private final String topic;
 
-    public SensorSimulator(KafkaTemplate<String, SensorData> kafkaTemplate) {
+    public SensorSimulator(KafkaTemplate<String, SensorData> kafkaTemplate,
+                           @Value("${app.kafka.topic}") String topic) {
         this.kafkaTemplate = kafkaTemplate;
+        this.topic = topic;
         this.scheduler = Executors.newScheduledThreadPool(10);
         this.scheduledTasks = new ArrayList<>();
     }
 
     @PostConstruct
     public void startSensors() {
-        System.out.println("Starting IoT sensor simulator");
+        log.info("Starting IoT sensor simulator");
 
         // Temperature sensors: sample every 10 seconds
         startSensor("sensor-temp-001", "TEMPERATURE", 10000, "°C", 15.0, 35.0, "warehouse-A");
@@ -49,7 +54,7 @@ public class SensorSimulator {
         startSensor("sensor-vibr-001", "VIBRATION", 500, "mm/s", 0.0, 10.0, "machine-1");
         startSensor("sensor-vibr-002", "VIBRATION", 500, "mm/s", 0.0, 10.0, "machine-2");
 
-        System.out.println("All sensors started");
+        log.info("All sensors started");
     }
 
     private void startSensor(String sensorId, String type, long intervalMs,
@@ -68,21 +73,21 @@ public class SensorSimulator {
                 data.setTimestamp(System.currentTimeMillis());
                 data.setLocation(location);
 
-                kafkaTemplate.send(TOPIC, sensorId, data)
+                kafkaTemplate.send(topic, sensorId, data)
                         .whenComplete((result, ex) -> {
                             if (ex != null) {
-                                System.err.printf("[%s] send failed: %s%n", sensorId, ex.getMessage());
+                                log.error("[{}] send failed", sensorId, ex);
                             } else {
-                                System.out.printf("[%s] %s sent: %.2f %s @ partition=%d offset=%d%n",
+                                log.info("[{}] {} sent: {} {} @ partition={} offset={}",
                                         sensorId, Instant.ofEpochMilli(data.getTimestamp()),
-                                        data.getValue(), data.getUnit(),
+                                        String.format("%.2f", data.getValue()), data.getUnit(),
                                         result.getRecordMetadata().partition(),
                                         result.getRecordMetadata().offset());
                             }
                         });
 
             } catch (Exception e) {
-                System.err.printf("[%s] sampling error: %s%n", sensorId, e.getMessage());
+                log.error("[{}] sampling error", sensorId, e);
             }
 
         }, initialDelay, intervalMs, TimeUnit.MILLISECONDS);
@@ -92,7 +97,7 @@ public class SensorSimulator {
 
     @PreDestroy
     public void stopSensors() {
-        System.out.println("Stopping all sensors...");
+        log.info("Stopping all sensors...");
         scheduledTasks.forEach(task -> task.cancel(false));
         scheduler.shutdown();
         try {
@@ -102,6 +107,6 @@ public class SensorSimulator {
         } catch (InterruptedException e) {
             scheduler.shutdownNow();
         }
-        System.out.println("All sensors stopped");
+        log.info("All sensors stopped");
     }
 }

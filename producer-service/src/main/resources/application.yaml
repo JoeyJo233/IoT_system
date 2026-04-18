@@ -12,6 +12,10 @@ spring:
       properties:
         spring.json.add.type.headers: false
 
+app:
+  kafka:
+    topic: ${KAFKA_TOPIC:iot-sensor-data}
+
 server:
   port: 8081
 

@@ -2,6 +2,7 @@ package com.example.consumer.consumer;
 
 import com.example.consumer.model.SensorData;
 import com.example.consumer.repository.SensorDataRepository;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.KafkaHeaders;
@@ -11,6 +12,7 @@ import org.springframework.stereotype.Service;
 import java.time.Duration;
 import java.time.Instant;
 
+@Slf4j
 @Service
 public class SensorDataConsumer {
 
@@ -26,7 +28,7 @@ public class SensorDataConsumer {
         this.redisTemplate = redisTemplate;
     }
 
-    @KafkaListener(topics = "iot-sensor-data", groupId = "iot-consumer-group")
+    @KafkaListener(topics = "${app.kafka.topic}", groupId = "${app.kafka.consumer-group}")
     public void consume(SensorData data,
                         @Header(KafkaHeaders.RECEIVED_TOPIC) String topic,
                         @Header(KafkaHeaders.RECEIVED_PARTITION) int partition,
@@ -39,8 +41,8 @@ public class SensorDataConsumer {
         String cacheKey = CACHE_PREFIX + data.getSensorId();
         redisTemplate.opsForValue().set(cacheKey, data, CACHE_TTL);
 
-        System.out.printf("[%s] %s received: %.2f %s @ partition=%d offset=%d%n",
+        log.info("[{}] {} received: {} {} @ partition={} offset={}",
                 data.getSensorId(), Instant.ofEpochMilli(data.getTimestamp()),
-                data.getValue(), data.getUnit(), partition, offset);
+                String.format("%.2f", data.getValue()), data.getUnit(), partition, offset);
     }
 }
