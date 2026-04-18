@@ -86,6 +86,30 @@ cd producer-service && ./mvnw spring-boot:run
 cd consumer-service && ./mvnw spring-boot:run
 ```
 
+### Dev tools (Mongo Express, Kafka UI, RedisInsight)
+
+Optional web UIs for inspecting the system at runtime. They live under the `tools` Docker Compose profile so they don't start by default.
+
+```bash
+docker compose --profile tools up -d mongo-express kafka-ui redis-insight
+```
+
+| Tool | URL | Purpose |
+|------|-----|---------|
+| Mongo Express | http://localhost:8091 | Browse the `iot.sensor_readings` collection, inspect documents, check the `sensorId_ts` / `sensorType_ts` compound indexes |
+| Kafka UI | http://localhost:8090 | View brokers, topics (`iot-sensor-data`, `.DLT`), live-stream messages, monitor `iot-consumer-group` lag |
+| RedisInsight | http://localhost:5540 | Browse `sensor:latest:*` keys, see TTLs, run commands in the Workbench |
+
+**RedisInsight connection** — add a database with **Host: `redis`** (the Docker service name, not `127.0.0.1`) and **Port: `6379`**. RedisInsight runs inside a container, so `localhost` would point at itself.
+
+**Kafka UI** auto-discovers the cluster via `KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:29092` — no setup needed.
+
+Stop tools only:
+
+```bash
+docker compose --profile tools down
+```
+
 ### Verify messages are flowing
 
 ```bash

@@ -55,7 +55,7 @@ services:
       retries: 5
 
   # ---------- Dev Tools (optional) ----------
-  # Start with: docker compose --profile tools up -d mongo-express
+  # Start with: docker compose --profile tools up -d
   mongo-express:
     image: mongo-express:1.0.2
     container_name: mongo-express
@@ -67,6 +67,30 @@ services:
       ME_CONFIG_BASICAUTH: "false"
     depends_on:
       mongodb:
+        condition: service_healthy
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    profiles: [tools]
+    ports:
+      - "8090:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      DYNAMIC_CONFIG_ENABLED: "true"
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  redis-insight:
+    image: redis/redisinsight:latest
+    container_name: redis-insight
+    profiles: [tools]
+    ports:
+      - "5540:5540"
+    depends_on:
+      redis:
         condition: service_healthy
 
   # ---------- Application Services ----------
