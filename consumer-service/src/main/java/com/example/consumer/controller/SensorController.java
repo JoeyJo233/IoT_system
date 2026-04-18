@@ -3,6 +3,7 @@ package com.example.consumer.controller;
 import com.example.consumer.model.SensorData;
 import com.example.consumer.repository.SensorDataRepository;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -24,15 +25,17 @@ public class SensorController {
 
     // GET /api/sensors/{sensorId}/latest — returns latest reading from Redis cache
     @GetMapping("/{sensorId}/latest")
-    public SensorData getLatest(@PathVariable String sensorId) {
+    public ResponseEntity<SensorData> getLatest(@PathVariable String sensorId) {
         String cacheKey = CACHE_PREFIX + sensorId;
         SensorData cached = redisTemplate.opsForValue().get(cacheKey);
         if (cached != null) {
-            return cached;
+            return ResponseEntity.ok(cached);
         }
         // Cache miss: fall back to MongoDB
         return repository.findBySensorIdOrderByTimestampDesc(sensorId)
-                .stream().findFirst().orElse(null);
+                .stream().findFirst()
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
     // GET /api/sensors/{sensorId}/history — returns historical readings from MongoDB

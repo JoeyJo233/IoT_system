@@ -28,9 +28,12 @@ public class SensorDataConsumer {
 
     @KafkaListener(topics = "iot-sensor-data", groupId = "iot-consumer-group")
     public void consume(SensorData data,
+                        @Header(KafkaHeaders.RECEIVED_TOPIC) String topic,
                         @Header(KafkaHeaders.RECEIVED_PARTITION) int partition,
                         @Header(KafkaHeaders.OFFSET) long offset) {
 
+        // Deterministic _id makes Mongo save() an upsert on Kafka redelivery.
+        data.setId(topic + "-" + partition + "-" + offset);
         repository.save(data);
 
         String cacheKey = CACHE_PREFIX + data.getSensorId();
