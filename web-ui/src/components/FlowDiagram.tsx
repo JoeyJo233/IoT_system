@@ -30,7 +30,7 @@ const NODES: Node[] = [
     kicker: "01 · edge",
     color: "var(--node-sensor)",
     soft: "var(--node-sensor-soft)",
-    meta: "8 devices",
+    meta: undefined,
   },
   {
     id: "producer",
@@ -102,6 +102,7 @@ export default function FlowDiagram() {
   const sim = useSimulationStatus();
   const running = sim.data?.running ?? false;
   const rate = sim.data?.messageRatePerSecond ?? 0;
+  const totalCount = sim.data?.totalCount ?? 0;
 
   // Drive halo pulses from a local counter. Period is inversely related to
   // the producer rate so the diagram visually slows when the backend slows.
@@ -235,7 +236,7 @@ export default function FlowDiagram() {
       ))}
 
       {/* Sensors container — render child rows inside */}
-      <SensorsNode node={sensors} running={running} />
+      <SensorsNode node={sensors} running={running} totalCount={totalCount} />
 
       {/* Other nodes */}
       {NODES.filter((n) => n.id !== "sensors").map((n) => (
@@ -358,7 +359,7 @@ function NodeBlock({ node, pulseKey }: { node: Node; pulseKey: number }) {
   );
 }
 
-function SensorsNode({ node, running }: { node: Node; running: boolean }) {
+function SensorsNode({ node, running, totalCount }: { node: Node; running: boolean; totalCount: number }) {
   const rows = [
     { label: "temperature", cadence: "10s", color: "var(--node-consumer)" },
     { label: "humidity", cadence: "5s", color: "var(--node-producer)" },
@@ -391,6 +392,11 @@ function SensorsNode({ node, running }: { node: Node; running: boolean }) {
       <text x={node.x + 14} y={node.y + 28 + 16} className="node-title">
         {node.label}
       </text>
+      {totalCount > 0 && (
+        <text x={node.x + node.w - 14} y={node.y + 28 + 16} textAnchor="end" className="node-meta">
+          {totalCount} devices
+        </text>
+      )}
 
       {rows.map((r, i) => {
         const y = node.y + 58 + i * rowH;

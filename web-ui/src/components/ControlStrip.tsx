@@ -9,12 +9,11 @@ interface Props {
   onStart(): void;
   onStop(): void;
   onToggle(id: string, nextRunning: boolean): void;
+  onAdd(): void;
+  onEdit(sensor: SensorStatus): void;
+  onDelete(id: string): Promise<void>;
 }
 
-/**
- * Thin control surface. Every button maps 1:1 to a real endpoint on the
- * producer service — no fake toggles, no client-only state.
- */
 export default function ControlStrip({
   sensors,
   running,
@@ -22,8 +21,12 @@ export default function ControlStrip({
   onStart,
   onStop,
   onToggle,
+  onAdd,
+  onEdit,
+  onDelete,
 }: Props) {
   const [pending, setPending] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   const runWithPending = async (key: string, fn: () => void | Promise<void>) => {
     setPending(key);
@@ -76,11 +79,18 @@ export default function ControlStrip({
 
       <div className="per-sensor">
         <div className="per-sensor__head">
-          <h4>Per-sensor control</h4>
-          <span>
-            {sensors.length} devices · {anyRunning ? "some running" : "all paused"}
-          </span>
+          <div>
+            <h4>Per-sensor control</h4>
+            <span>
+              {sensors.length} device{sensors.length !== 1 ? "s" : ""} ·{" "}
+              {anyRunning ? "some running" : "all paused"}
+            </span>
+          </div>
+          <button className="btn btn--add" onClick={onAdd} disabled={loading}>
+            + Add sensor
+          </button>
         </div>
+
         {sensors.length === 0 && (
           <div
             style={{
@@ -94,24 +104,24 @@ export default function ControlStrip({
             · producer service unreachable — no catalog ·
           </div>
         )}
+
         {sensors.map((spec) => {
           const meta = TYPE_META[spec.sensorType];
           const rate = spec.running ? 1000 / spec.intervalMs : 0;
-          const key = `toggle-${spec.sensorId}`;
+          const toggleKey = `toggle-${spec.sensorId}`;
+          const deleteKey = `delete-${spec.sensorId}`;
+          const isConfirming = confirmDelete === spec.sensorId;
+
           return (
             <div
               key={spec.sensorId}
               className="per-row"
-              style={
-                { ["--type-color" as string]: meta.color } as React.CSSProperties
-              }
+              style={{ ["--type-color" as string]: meta.color } as React.CSSProperties}
             >
               <span
                 className={`per-row__tick ${spec.running ? "" : "paused"}`}
                 style={{
-                  animation: spec.running
-                    ? "pulseDot 1.4s ease-in-out infinite"
-                    : "none",
+                  animation: spec.running ? "pulseDot 1.4s ease-in-out infinite" : "none",
                   boxShadow: spec.running ? `0 0 0 3px ${meta.color}20` : "none",
                 }}
               />
@@ -121,15 +131,20 @@ export default function ControlStrip({
               <span style={{ color: "var(--ink-muted)", fontSize: 12 }}>
                 {meta.label} · {spec.location}
               </span>
+              <span className="per-row__model" title="Data model">
+                {(spec.dataModel ?? "random").toLowerCase().replace("_", " ")}
+              </span>
               <span className="per-row__rate">
                 {rate ? `${rate.toFixed(2)}/s` : "paused"}
               </span>
+
+              {/* Start/stop toggle */}
               <span className="per-row__toggle">
                 <button
                   className={`toggle-btn ${spec.running ? "on" : ""}`}
-                  disabled={loading || pending === key}
+                  disabled={loading || pending === toggleKey}
                   onClick={() =>
-                    runWithPending(key, () => onToggle(spec.sensorId, !spec.running))
+                    runWithPending(toggleKey, () => onToggle(spec.sensorId, !spec.running))
                   }
                 >
                   <span
@@ -140,9 +155,55 @@ export default function ControlStrip({
                       background: spec.running ? meta.color : "var(--ink-faint)",
                     }}
                   />
-                  {pending === key ? "…" : spec.running ? "stop" : "start"}
+                  {pending === toggleKey ? "…" : spec.running ? "stop" : "start"}
                 </button>
               </span>
+
+              {/* Edit / Delete */}
+              {isConfirming ? (
+                <span className="per-row__actions">
+                  <span style={{ fontSize: 11, color: "var(--ink-muted)", marginRight: 6 }}>
+                    Delete?
+                  </span>
+                  <button
+                    className="icon-btn icon-btn--danger"
+                    disabled={pending === deleteKey}
+                    onClick={() =>
+                      runWithPending(deleteKey, async () => {
+                        await onDelete(spec.sensorId);
+                        setConfirmDelete(null);
+                      })
+                    }
+                  >
+                    {pending === deleteKey ? "…" : "Yes"}
+                  </button>
+                  <button
+                    className="icon-btn"
+                    onClick={() => setConfirmDelete(null)}
+                  >
+                    No
+                  </button>
+                </span>
+              ) : (
+                <span className="per-row__actions">
+                  <button
+                    className="icon-btn"
+                    title="Edit sensor"
+                    disabled={loading}
+                    onClick={() => onEdit(spec)}
+                  >
+                    ✎
+                  </button>
+                  <button
+                    className="icon-btn icon-btn--danger"
+                    title="Delete sensor"
+                    disabled={loading}
+                    onClick={() => setConfirmDelete(spec.sensorId)}
+                  >
+                    ✕
+                  </button>
+                </span>
+              )}
             </div>
           );
         })}
@@ -151,7 +212,7 @@ export default function ControlStrip({
           <span>
             · backend: producer-service · endpoints ·
             /api/simulation/{"{"}start,stop{"}"} and
-            /api/simulation/sensors/{"{"}id{"}"}/{"{"}start,stop{"}"}
+            /api/simulation/sensors/{"{"}id{"}"}/{"{"}start,stop,…{"}"}
           </span>
           <span>· reset pipeline not implemented ·</span>
         </div>

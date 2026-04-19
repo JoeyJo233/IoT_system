@@ -7,6 +7,13 @@ export type SensorType =
   | "PRESSURE"
   | "VIBRATION";
 
+export type DataModel =
+  | "RANDOM"
+  | "SINE"
+  | "RANDOM_WALK"
+  | "SAWTOOTH"
+  | "STEP";
+
 /** /api/sensors/{id}/latest, /history, /type/{type} response item */
 export interface Reading {
   sensorId: string;
@@ -28,6 +35,7 @@ export interface SensorStatus {
   maxValue: number;
   location: string;
   running: boolean;
+  dataModel: DataModel;
 }
 
 /** /api/simulation/status response */
@@ -37,6 +45,26 @@ export interface SimulationStatus {
   totalCount: number;
   messageRatePerSecond: number;
   sensors: SensorStatus[];
+}
+
+/** POST /api/simulation/sensors request body */
+export interface CreateSensorRequest {
+  sensorId: string;
+  sensorType: SensorType;
+  intervalMs: number;
+  minValue: number;
+  maxValue: number;
+  location: string;
+  dataModel: DataModel;
+}
+
+/** PUT /api/simulation/sensors/{id} request body */
+export interface UpdateSensorRequest {
+  intervalMs: number;
+  minValue: number;
+  maxValue: number;
+  location: string;
+  dataModel: DataModel;
 }
 
 export type FetchState<T> =

@@ -15,6 +15,8 @@ import HistoryChart from "../components/HistoryChart";
 import ReadingsTable from "../components/ReadingsTable";
 import ControlStrip from "../components/ControlStrip";
 import BackendBanner from "../components/BackendBanner";
+import SensorFormModal from "../components/SensorFormModal";
+import type { FormState } from "../components/SensorFormModal";
 
 export default function DataScreen() {
   const sim = useSimulationStatus();
@@ -23,6 +25,10 @@ export default function DataScreen() {
 
   const [typeFilter, setTypeFilter] = useState<"ALL" | SensorType>("ALL");
   const [selectedSensor, setSelectedSensor] = useState<string>("sensor-vibr-001");
+
+  // Modal state
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingSensor, setEditingSensor] = useState<SensorStatus | null>(null);
 
   const latest = useLatestMany(sensorIds);
   const history = useHistory(selectedSensor);
@@ -36,21 +42,58 @@ export default function DataScreen() {
   }, [sensors, typeFilter]);
 
   const typeCounts = useMemo(() => {
-    const c: Record<SensorType, number> = {
-      TEMPERATURE: 0,
-      HUMIDITY: 0,
-      PRESSURE: 0,
-      VIBRATION: 0,
-    };
+    const c: Record<SensorType, number> = { TEMPERATURE: 0, HUMIDITY: 0, PRESSURE: 0, VIBRATION: 0 };
     for (const s of sensors) c[s.sensorType]++;
     return c;
   }, [sensors]);
 
   const rate = sim.data?.messageRatePerSecond ?? 0;
-
-  const backendError =
-    sim.error ?? latest.error ?? history.error ?? recent.error;
+  const backendError = sim.error ?? latest.error ?? history.error ?? recent.error;
   const everLoaded = sim.status === "ok" || sim.data != null;
+
+  function openCreate() {
+    setEditingSensor(null);
+    setModalOpen(true);
+  }
+
+  function openEdit(sensor: SensorStatus) {
+    setEditingSensor(sensor);
+    setModalOpen(true);
+  }
+
+  function closeModal() {
+    setModalOpen(false);
+    setEditingSensor(null);
+  }
+
+  async function handleModalConfirm(form: FormState) {
+    if (editingSensor) {
+      await simulationApi.updateSensor(editingSensor.sensorId, {
+        intervalMs: form.intervalMs,
+        minValue:   form.minValue,
+        maxValue:   form.maxValue,
+        location:   form.location,
+        dataModel:  form.dataModel,
+      });
+    } else {
+      await simulationApi.createSensor({
+        sensorId:   form.sensorId,
+        sensorType: form.sensorType,
+        intervalMs: form.intervalMs,
+        minValue:   form.minValue,
+        maxValue:   form.maxValue,
+        location:   form.location,
+        dataModel:  form.dataModel,
+      });
+    }
+    closeModal();
+    sim.refetch();
+  }
+
+  async function handleDelete(id: string) {
+    await simulationApi.deleteSensor(id);
+    sim.refetch();
+  }
 
   return (
     <>
@@ -60,7 +103,7 @@ export default function DataScreen() {
             Chapter 02 · Live Data Screen
           </div>
           <h1>
-            Eight sensors. Four cadences.
+            {sensors.length} sensor{sensors.length !== 1 ? "s" : ""}. {new Set(sensors.map((s) => s.sensorType)).size || "four"} type{new Set(sensors.map((s) => s.sensorType)).size !== 1 ? "s" : ""}.
             <br />
             One scrolling window into the system.
           </h1>
@@ -165,10 +208,7 @@ export default function DataScreen() {
               ))}
             </div>
           </div>
-          <LiveChart
-            byType={liveBuffer}
-            ranges={buildTypeRanges(sensors)}
-          />
+          <LiveChart byType={liveBuffer} ranges={buildTypeRanges(sensors)} />
         </div>
 
         <div className="chart-panel">
@@ -189,14 +229,10 @@ export default function DataScreen() {
                   className="legend-swatch__box"
                   style={{
                     background:
-                      TYPE_META[
-                        resolveType(sensors, selectedSensor) ?? "TEMPERATURE"
-                      ].color,
+                      TYPE_META[resolveType(sensors, selectedSensor) ?? "TEMPERATURE"].color,
                   }}
                 />
-                {TYPE_META[
-                  resolveType(sensors, selectedSensor) ?? "TEMPERATURE"
-                ].label}
+                {TYPE_META[resolveType(sensors, selectedSensor) ?? "TEMPERATURE"].label}
               </span>
             </div>
           </div>
@@ -207,6 +243,20 @@ export default function DataScreen() {
           />
         </div>
       </div>
+
+      <ControlStrip
+        sensors={sensors}
+        running={sim.data?.running ?? false}
+        loading={!everLoaded}
+        onStart={() => simulationApi.startAll().finally(sim.refetch)}
+        onStop={() => simulationApi.stopAll().finally(sim.refetch)}
+        onToggle={(id, run) =>
+          (run ? simulationApi.startOne(id) : simulationApi.stopOne(id)).finally(sim.refetch)
+        }
+        onAdd={openCreate}
+        onEdit={openEdit}
+        onDelete={handleDelete}
+      />
 
       <div className="panel">
         <div className="panel__head">
@@ -224,8 +274,7 @@ export default function DataScreen() {
             <span
               className="dot"
               style={{
-                background:
-                  recent.status === "error" ? "var(--err)" : "var(--accent)",
+                background: recent.status === "error" ? "var(--err)" : "var(--accent)",
               }}
             />
             {recent.status === "error" ? "stale" : "streaming"}
@@ -240,19 +289,14 @@ export default function DataScreen() {
         </div>
       </div>
 
-      <ControlStrip
-        sensors={sensors}
-        running={sim.data?.running ?? false}
-        loading={!everLoaded}
-        onStart={() => simulationApi.startAll().finally(sim.refetch)}
-        onStop={() => simulationApi.stopAll().finally(sim.refetch)}
-        onToggle={(id, run) =>
-          (run
-            ? simulationApi.startOne(id)
-            : simulationApi.stopOne(id)
-          ).finally(sim.refetch)
-        }
-      />
+      {modalOpen && (
+        <SensorFormModal
+          editing={editingSensor}
+          existingSensors={sensors}
+          onConfirm={handleModalConfirm}
+          onClose={closeModal}
+        />
+      )}
     </>
   );
 }
@@ -287,13 +331,7 @@ function resolveType(sensors: SensorStatus[], id: string): SensorType | undefine
   return sensors.find((s) => s.sensorId === id)?.sensorType;
 }
 
-function EmptyGrid({
-  loading,
-  error,
-}: {
-  loading: boolean;
-  error: Error | null;
-}) {
+function EmptyGrid({ loading, error }: { loading: boolean; error: Error | null }) {
   return (
     <div
       style={{
@@ -316,5 +354,5 @@ function EmptyGrid({
     </div>
   );
 }
-// Silence unused-import for Reading until referenced elsewhere
+
 export type { Reading };

@@ -1,12 +1,14 @@
-import type { Reading, SensorStatus, SensorType, SimulationStatus } from "./types";
+import type {
+  Reading,
+  SensorStatus,
+  SensorType,
+  SimulationStatus,
+  CreateSensorRequest,
+  UpdateSensorRequest,
+} from "./types";
 
 // ---------------------------------------------------------------------------
 // Fetch primitives
-//
-// All requests go through /api/... relative paths. In dev the Vite proxy
-// forwards /api/simulation to the producer (port 8081) and /api/sensors to
-// the consumer (port 8082). In a same-origin deployment they can be routed
-// the same way by a reverse proxy.
 // ---------------------------------------------------------------------------
 
 async function getJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -17,13 +19,35 @@ async function getJson<T>(url: string, init?: RequestInit): Promise<T> {
   if (!res.ok) {
     throw new ApiError(url, res.status, await res.text().catch(() => ""));
   }
-  // 204 No Content / empty body → undefined
   const text = await res.text();
   if (!text) return undefined as T;
   try {
     return JSON.parse(text) as T;
   } catch {
     throw new ApiError(url, res.status, `Non-JSON response: ${text.slice(0, 200)}`);
+  }
+}
+
+async function postJson<T>(url: string, body: unknown): Promise<T> {
+  return getJson<T>(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+async function putJson<T>(url: string, body: unknown): Promise<T> {
+  return getJson<T>(url, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+async function deleteReq(url: string): Promise<void> {
+  const res = await fetch(url, { method: "DELETE" });
+  if (!res.ok) {
+    throw new ApiError(url, res.status, await res.text().catch(() => ""));
   }
 }
 
@@ -45,11 +69,8 @@ export class ApiError extends Error {
 export const simulationApi = {
   status: () => getJson<SimulationStatus>("/api/simulation/status"),
 
-  startAll: () =>
-    getJson<SimulationStatus>("/api/simulation/start", { method: "POST" }),
-
-  stopAll: () =>
-    getJson<SimulationStatus>("/api/simulation/stop", { method: "POST" }),
+  startAll: () => getJson<SimulationStatus>("/api/simulation/start", { method: "POST" }),
+  stopAll: () => getJson<SimulationStatus>("/api/simulation/stop", { method: "POST" }),
 
   startOne: (sensorId: string) =>
     getJson<SensorStatus>(
@@ -62,6 +83,15 @@ export const simulationApi = {
       `/api/simulation/sensors/${encodeURIComponent(sensorId)}/stop`,
       { method: "POST" },
     ),
+
+  createSensor: (req: CreateSensorRequest) =>
+    postJson<SensorStatus>("/api/simulation/sensors", req),
+
+  updateSensor: (sensorId: string, req: UpdateSensorRequest) =>
+    putJson<SensorStatus>(`/api/simulation/sensors/${encodeURIComponent(sensorId)}`, req),
+
+  deleteSensor: (sensorId: string) =>
+    deleteReq(`/api/simulation/sensors/${encodeURIComponent(sensorId)}`),
 };
 
 // ---------------------------------------------------------------------------
@@ -69,15 +99,9 @@ export const simulationApi = {
 // ---------------------------------------------------------------------------
 
 export const sensorsApi = {
-  /**
-   * Latest reading for a single sensor. The backend first checks Redis and
-   * falls back to Mongo; 404 when the sensor has never published.
-   */
   latest: async (sensorId: string): Promise<Reading | null> => {
     try {
-      return await getJson<Reading>(
-        `/api/sensors/${encodeURIComponent(sensorId)}/latest`,
-      );
+      return await getJson<Reading>(`/api/sensors/${encodeURIComponent(sensorId)}/latest`);
     } catch (e) {
       if (e instanceof ApiError && e.statusCode === 404) return null;
       throw e;
@@ -85,21 +109,15 @@ export const sensorsApi = {
   },
 
   history: (sensorId: string) =>
-    getJson<Reading[]>(
-      `/api/sensors/${encodeURIComponent(sensorId)}/history`,
-    ),
+    getJson<Reading[]>(`/api/sensors/${encodeURIComponent(sensorId)}/history`),
 
   byType: (sensorType: SensorType) =>
-    getJson<Reading[]>(
-      `/api/sensors/type/${encodeURIComponent(sensorType)}`,
-    ),
+    getJson<Reading[]>(`/api/sensors/type/${encodeURIComponent(sensorType)}`),
 
-  /**
-   * Convenience: fetch latest for every known sensor concurrently.
-   */
   latestMany: async (ids: string[]): Promise<Record<string, Reading | null>> => {
     const pairs = await Promise.all(
-      ids.map((id) => sensorsApi.latest(id).then((r) => [id, r] as const).catch(() => [id, null] as const)),
+      ids
+        .map((id) => sensorsApi.latest(id).then((r) => [id, r] as const).catch(() => [id, null] as const)),
     );
     return Object.fromEntries(pairs);
   },
