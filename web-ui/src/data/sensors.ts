@@ -1,6 +1,23 @@
-import type { SensorSpec, SensorType } from "../types";
+import type { SensorType } from "../api/types";
 
-export const SENSORS: SensorSpec[] = [
+/**
+ * Static catalog used for labels, colors, and cadence copy only.
+ * The authoritative sensor list at runtime comes from
+ * /api/simulation/status. Keep this in sync with
+ * producer-service SensorSimulator when you add a sensor.
+ */
+export interface SensorCatalogEntry {
+  id: string;
+  type: SensorType;
+  unit: string;
+  intervalMs: number;
+  min: number;
+  max: number;
+  location: string;
+  hot?: boolean;
+}
+
+export const SENSORS: SensorCatalogEntry[] = [
   {
     id: "sensor-temp-001",
     type: "TEMPERATURE",

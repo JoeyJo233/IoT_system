@@ -1,25 +1,54 @@
-import { useEffect, useState } from "react";
-import {
-  activeCount,
-  ratePerSecond,
-  totalRate,
-  useSimulator,
-} from "../data/simulator";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ALL_TYPES, TYPE_META } from "../data/sensors";
+import type { SensorStatus, SensorType } from "../api/types";
+import { useSimulationStatus } from "../hooks/useSensors";
 import FlowDiagram from "../components/FlowDiagram";
 
 export default function SystemFlow() {
-  const state = useSimulator();
-  const rate = totalRate(state);
-  const active = activeCount(state);
+  const sim = useSimulationStatus();
+  const sensors: SensorStatus[] = sim.data?.sensors ?? [];
+  const rate = sim.data?.messageRatePerSecond ?? 0;
+  const active = sim.data?.activeCount ?? 0;
+  const total = sim.data?.totalCount ?? 0;
+  const running = sim.data?.running ?? false;
+
+  // We don't get `produced since startup` from the backend yet, so we derive a
+  // client-side running counter: integrate rate over elapsed seconds. This is
+  // labelled honestly as an estimate in the stat cell.
   const [elapsed, setElapsed] = useState(0);
+  const startedAtRef = useRef<number | null>(null);
+  const producedRef = useRef(0);
+  const lastTickRef = useRef<number>(Date.now());
+
+  useEffect(() => {
+    if (running && startedAtRef.current == null) {
+      startedAtRef.current = Date.now();
+      lastTickRef.current = Date.now();
+      producedRef.current = 0;
+    }
+    if (!running) {
+      startedAtRef.current = null;
+    }
+  }, [running]);
 
   useEffect(() => {
     const h = window.setInterval(() => {
-      setElapsed(Math.floor((Date.now() - state.totals.startedAt) / 1000));
+      const now = Date.now();
+      if (running && startedAtRef.current != null) {
+        const dt = (now - lastTickRef.current) / 1000;
+        producedRef.current += rate * dt;
+        setElapsed(Math.floor((now - startedAtRef.current) / 1000));
+      }
+      lastTickRef.current = now;
     }, 1000);
     return () => clearInterval(h);
-  }, [state.totals.startedAt]);
+  }, [running, rate]);
+
+  const ratesByType = useMemo(
+    () => ratePerTypeFromSensors(sensors),
+    [sensors],
+  );
+  const maxRate = Math.max(0.01, ...Object.values(ratesByType));
 
   return (
     <>
@@ -52,10 +81,11 @@ export default function SystemFlow() {
             <div className="stat-cell__label">Sensors running</div>
             <div className="stat-cell__value num">
               {active}
-              <small>/ 8</small>
+              <small>/ {total || "—"}</small>
             </div>
             <div className="stat-cell__note">
-              Across four types and four locations.
+              Live from{" "}
+              <code>/api/simulation/status</code>.
             </div>
           </div>
           <div className="stat-cell">
@@ -69,12 +99,12 @@ export default function SystemFlow() {
             </div>
           </div>
           <div className="stat-cell">
-            <div className="stat-cell__label">Messages produced</div>
+            <div className="stat-cell__label">Produced (estimated)</div>
             <div className="stat-cell__value num">
-              {state.totals.produced.toLocaleString()}
+              {Math.round(producedRef.current).toLocaleString()}
             </div>
             <div className="stat-cell__note">
-              Since {new Date(state.totals.startedAt).toLocaleTimeString()}.
+              Client-side integral of rate × session uptime.
             </div>
           </div>
           <div className="stat-cell">
@@ -82,7 +112,9 @@ export default function SystemFlow() {
             <div className="stat-cell__value num">
               {formatElapsed(elapsed)}
             </div>
-            <div className="stat-cell__note">Client-side simulator only.</div>
+            <div className="stat-cell__note">
+              {running ? "Counting while producer is live." : "Paused."}
+            </div>
           </div>
         </div>
       </section>
@@ -254,19 +286,16 @@ export default function SystemFlow() {
           </div>
           <h3>Four heartbeats, one pipeline</h3>
           <p>
-            Each row’s tick fires at the cadence of its sensor type. Notice
-            how vibration dominates — it alone generates more traffic than the
-            other three combined.
+            Each row’s tick fires at the cadence of its sensor type. Rates are
+            derived from the running sensors reported by the producer — if
+            nothing is live, the bars are empty.
           </p>
         </div>
         <div className="cadence__rows">
           {ALL_TYPES.map((t) => {
-            const r = ratePerSecond(t, state);
+            const r = ratesByType[t];
             const meta = TYPE_META[t];
-            const pctOfMax = Math.min(
-              100,
-              (r / Math.max(0.01, ratePerSecond("VIBRATION", state))) * 100,
-            );
+            const pctOfMax = Math.min(100, (r / maxRate) * 100);
             return (
               <div className="cadence-row" key={t}>
                 <span
@@ -344,6 +373,22 @@ export default function SystemFlow() {
       </section>
     </>
   );
+}
+
+function ratePerTypeFromSensors(
+  sensors: SensorStatus[],
+): Record<SensorType, number> {
+  const out: Record<SensorType, number> = {
+    TEMPERATURE: 0,
+    HUMIDITY: 0,
+    PRESSURE: 0,
+    VIBRATION: 0,
+  };
+  for (const s of sensors) {
+    if (!s.running) continue;
+    out[s.sensorType] += 1000 / s.intervalMs;
+  }
+  return out;
 }
 
 function NodeDetail({

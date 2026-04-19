@@ -1,4 +1,5 @@
-import { useSimulator } from "../data/simulator";
+import { useEffect, useState } from "react";
+import { useSimulationStatus } from "../hooks/useSensors";
 
 type PulseKey = "producer" | "kafka" | "consumer" | "redis" | "mongo";
 
@@ -98,7 +99,19 @@ function nodeById(id: string) {
 }
 
 export default function FlowDiagram() {
-  const state = useSimulator();
+  const sim = useSimulationStatus();
+  const running = sim.data?.running ?? false;
+  const rate = sim.data?.messageRatePerSecond ?? 0;
+
+  // Drive halo pulses from a local counter. Period is inversely related to
+  // the producer rate so the diagram visually slows when the backend slows.
+  const [pulseTick, setPulseTick] = useState(0);
+  useEffect(() => {
+    if (!running) return;
+    const period = Math.max(180, Math.min(1500, 1000 / Math.max(0.5, rate)));
+    const h = window.setInterval(() => setPulseTick((n) => n + 1), period);
+    return () => clearInterval(h);
+  }, [running, rate]);
 
   const producer = nodeById("producer");
   const kafka = nodeById("kafka");
@@ -222,14 +235,14 @@ export default function FlowDiagram() {
       ))}
 
       {/* Sensors container — render child rows inside */}
-      <SensorsNode node={sensors} running={state.running} />
+      <SensorsNode node={sensors} running={running} />
 
       {/* Other nodes */}
       {NODES.filter((n) => n.id !== "sensors").map((n) => (
         <NodeBlock
           key={n.id}
           node={n}
-          pulseKey={state.pulses[n.id as PulseKey] ?? 0}
+          pulseKey={running ? pulseTick + pulseOffset(n.id as PulseKey) : 0}
         />
       ))}
 
@@ -277,6 +290,22 @@ export default function FlowDiagram() {
       `}</style>
     </svg>
   );
+}
+
+function pulseOffset(id: PulseKey): number {
+  // Spread halo restarts so the pipeline doesn't blink in lockstep.
+  switch (id) {
+    case "producer":
+      return 0;
+    case "kafka":
+      return 1;
+    case "consumer":
+      return 2;
+    case "redis":
+      return 3;
+    case "mongo":
+      return 4;
+  }
 }
 
 function curve(a: { x: number; y: number }, b: { x: number; y: number }, bend = 0.45) {

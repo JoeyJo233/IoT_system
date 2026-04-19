@@ -15,7 +15,8 @@
     <description>IoT Sensor Consumer - reads from Kafka, caches in Redis, persists to MongoDB</description>
 
     <properties>
-        <java.version>17</java.version>
+        <java.version>21</java.version>
+        <maven.compiler.release>21</maven.compiler.release>
         <jackson-bom.version>3.1.1</jackson-bom.version>
         <tomcat.version>11.0.21</tomcat.version>
     </properties>

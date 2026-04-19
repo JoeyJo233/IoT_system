@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useBootstrap, useSimulator, totalRate } from "./data/simulator";
+import { useSimulationStatus } from "./hooks/useSensors";
 import SystemFlow from "./pages/SystemFlow";
 import DataScreen from "./pages/DataScreen";
 
@@ -11,10 +11,20 @@ const TABS: { id: TabId; label: string; num: string }[] = [
 ];
 
 export default function App() {
-  useBootstrap();
   const [tab, setTab] = useState<TabId>("flow");
-  const state = useSimulator();
-  const rate = totalRate(state);
+  const sim = useSimulationStatus();
+  const rate = sim.data?.messageRatePerSecond ?? 0;
+  const running = sim.data?.running ?? false;
+  const unreachable = sim.status === "error" && !sim.data;
+
+  const chipLabel = unreachable
+    ? "offline"
+    : sim.data
+      ? running
+        ? "live"
+        : "paused"
+      : "connecting";
+  const chipClass = unreachable ? "err" : running ? "ok" : "warn";
 
   return (
     <div className="app">
@@ -45,9 +55,9 @@ export default function App() {
             {rate.toFixed(1)} <span style={{ opacity: 0.6 }}>msg/s</span>
           </span>
           <span className="sep" />
-          <span className={`pill ${state.running ? "ok" : "warn"}`}>
+          <span className={`pill ${chipClass}`}>
             <span className="dot" />
-            {state.running ? "live" : "paused"}
+            {chipLabel}
           </span>
         </div>
       </header>

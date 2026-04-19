@@ -23,7 +23,7 @@ A high-throughput IoT sensor data pipeline built with a **Producer/Consumer micr
 
 | Layer | Technology |
 |-------|-----------|
-| Language | Java 17 |
+| Language | Java 21 |
 | Framework | Spring Boot 4.0.5 |
 | Message Broker | Apache Kafka (Confluent 7.5.0) |
 | Cache | Redis 7 |
@@ -66,26 +66,48 @@ A high-throughput IoT sensor data pipeline built with a **Producer/Consumer micr
 ### Prerequisites
 
 - Docker & Docker Compose
+- GNU Make
 
-### Run the full system
+### Common commands
+
+Use the Makefile as the primary entrypoint for local workflows:
 
 ```bash
-docker-compose up --build
+make help
 ```
 
-This starts 5 containers: Kafka (KRaft mode, no Zookeeper), Redis, MongoDB, Producer, Consumer.
+Most common flows:
+
+```bash
+make up          # core services only
+make up-tools    # core services + Mongo Express / Kafka UI / RedisInsight
+make infra       # Kafka + Redis + MongoDB only
+make web         # start the Vite Web UI dev server
+make logs-consumer
+make logs-producer
+make down
+```
+
+### Run the core system
+
+```bash
+make up
+```
+
+This starts the core 5 containers only: Kafka (KRaft mode, no Zookeeper), Redis, MongoDB, Producer, Consumer.
+The optional debug tools do not start by default.
 
 ### Run services individually (for development)
 
 ```bash
 # Start infrastructure only
-docker-compose up -d kafka redis mongodb
+make infra
 
 # Run Producer
-cd producer-service && ./mvnw spring-boot:run
+make producer
 
 # Run Consumer
-cd consumer-service && ./mvnw spring-boot:run
+make consumer
 ```
 
 ### Dev tools (Mongo Express, Kafka UI, RedisInsight)
@@ -93,7 +115,11 @@ cd consumer-service && ./mvnw spring-boot:run
 Optional web UIs for inspecting the system at runtime. They live under the `tools` Docker Compose profile so they don't start by default.
 
 ```bash
-docker compose --profile tools up -d mongo-express kafka-ui redis-insight
+# Start all optional tools
+make up-tools
+
+# Or start selected tools only
+make tools
 ```
 
 | Tool | URL | Purpose |
@@ -109,7 +135,13 @@ docker compose --profile tools up -d mongo-express kafka-ui redis-insight
 Stop tools only:
 
 ```bash
-docker compose --profile tools down
+docker compose stop mongo-express kafka-ui redis-insight
+```
+
+Stop the full stack:
+
+```bash
+make down
 ```
 
 ### Verify messages are flowing
@@ -123,13 +155,42 @@ docker exec -it kafka kafka-console-consumer \
 
 ## REST API
 
-Base URL: `http://localhost:8082/api/sensors`
+### Query plane — consumer-service (`http://localhost:8082`)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/{sensorId}/latest` | Latest reading (Redis cache → MongoDB fallback) |
-| GET | `/{sensorId}/history` | Full historical readings from MongoDB |
-| GET | `/type/{sensorType}` | All readings by sensor type |
+| GET | `/api/sensors/{sensorId}/latest` | Latest reading (Redis cache → MongoDB fallback) |
+| GET | `/api/sensors/{sensorId}/history` | Full historical readings from MongoDB |
+| GET | `/api/sensors/type/{sensorType}` | All readings by sensor type |
+
+### Control plane — producer-service (`http://localhost:8081`)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET  | `/api/simulation/status` | Simulator state + per-sensor catalog + aggregate rate |
+| GET  | `/api/simulation/sensors` | Per-sensor list (same shape as `status.sensors`) |
+| POST | `/api/simulation/start` | Start all sensors |
+| POST | `/api/simulation/stop`  | Stop all sensors |
+| POST | `/api/simulation/sensors/{id}/start` | Start a single sensor |
+| POST | `/api/simulation/sensors/{id}/stop`  | Stop a single sensor |
+
+The Web UI's Data Screen uses the query plane for values and the control plane for Start/Stop buttons.
+
+## Web UI
+
+A React + Vite dashboard lives in `web-ui/`. Two tabs:
+
+- **System Flow** — explanatory architecture diagram (live stats pulled from `/api/simulation/status`).
+- **Data Screen** — real-time values and history pulled from the consumer REST API, with control buttons wired to the producer's simulation endpoints.
+
+```bash
+cd web-ui
+npm install
+cd ..
+make web              # http://localhost:5173
+```
+
+The dev server proxies `/api/simulation` → `http://localhost:8081` and `/api/sensors` → `http://localhost:8082`. Override via `VITE_PRODUCER_URL` / `VITE_CONSUMER_URL` if running services elsewhere.
 
 ## Sensors
 
@@ -144,10 +205,10 @@ Base URL: `http://localhost:8082/api/sensors`
 
 ```bash
 # Producer tests
-cd producer-service && ./mvnw test
+make test-producer
 
 # Consumer tests
-cd consumer-service && ./mvnw test
+make test-consumer
 ```
 
 ## CI/CD

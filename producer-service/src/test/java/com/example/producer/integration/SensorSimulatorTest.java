@@ -38,7 +38,7 @@ class SensorSimulatorTest {
 
     @AfterEach
     void tearDown() {
-        simulator.stopSensors();
+        simulator.shutdown();
     }
 
     @Test

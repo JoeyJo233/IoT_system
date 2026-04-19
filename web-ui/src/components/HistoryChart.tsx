@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import type { SensorState } from "../types";
+import type { Reading, SensorStatus } from "../api/types";
 import { TYPE_META } from "../data/sensors";
 
 const W = 520;
@@ -8,17 +8,27 @@ const PAD_L = 48;
 const PAD_R = 16;
 const PAD_T = 18;
 const PAD_B = 32;
+const MAX_POINTS = 240;
 
-export default function HistoryChart({ sensor }: { sensor: SensorState | undefined }) {
-  const bounds = useMemo(() => computeBounds(sensor), [sensor]);
+interface Props {
+  history: Reading[];
+  spec: SensorStatus | null;
+  status: "idle" | "loading" | "ok" | "error";
+}
 
-  if (!sensor) return null;
+export default function HistoryChart({ history, spec, status }: Props) {
+  // Downsample newest-N so the SVG stays legible even if Mongo returns 10k points.
+  const pts = useMemo(() => {
+    const sorted = [...history].sort((a, b) => a.timestamp - b.timestamp);
+    if (sorted.length <= MAX_POINTS) return sorted;
+    return sorted.slice(sorted.length - MAX_POINTS);
+  }, [history]);
 
-  const meta = TYPE_META[sensor.spec.type];
+  const bounds = useMemo(() => computeBounds(pts, spec), [pts, spec]);
+  const meta = spec ? TYPE_META[spec.sensorType] : TYPE_META.TEMPERATURE;
   const { min, max, xMin, xMax } = bounds;
   const plotW = W - PAD_L - PAD_R;
   const plotH = H - PAD_T - PAD_B;
-  const pts = sensor.history;
 
   const toX = (t: number) => PAD_L + ((t - xMin) / (xMax - xMin || 1)) * plotW;
   const toY = (v: number) =>
@@ -41,10 +51,14 @@ export default function HistoryChart({ sensor }: { sensor: SensorState | undefin
         ).toFixed(2)} ${H - PAD_B} Z`
       : "";
 
-  const gradId = `hgrad-${sensor.spec.id}`;
+  const gradId = `hgrad-${spec?.sensorId ?? "none"}`;
 
   return (
-    <svg className="chart-svg chart-svg--tall" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
+    <svg
+      className="chart-svg chart-svg--tall"
+      viewBox={`0 0 ${W} ${H}`}
+      preserveAspectRatio="none"
+    >
       <defs>
         <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor={meta.color} stopOpacity={0.22} />
@@ -52,7 +66,6 @@ export default function HistoryChart({ sensor }: { sensor: SensorState | undefin
         </linearGradient>
       </defs>
 
-      {/* Grid */}
       {[0, 0.25, 0.5, 0.75, 1].map((p, i) => {
         const y = PAD_T + plotH * (1 - p);
         const v = min + (max - min) * p;
@@ -74,23 +87,24 @@ export default function HistoryChart({ sensor }: { sensor: SensorState | undefin
               fontSize={9.5}
               fill="var(--ink-muted)"
             >
-              {v.toFixed(sensor.spec.type === "PRESSURE" ? 0 : 1)}
+              {v.toFixed(spec?.sensorType === "PRESSURE" ? 0 : 1)}
             </text>
           </g>
         );
       })}
 
-      <text
-        x={PAD_L - 36}
-        y={PAD_T + 2}
-        fontFamily="var(--font-mono)"
-        fontSize={9}
-        fill="var(--ink-muted)"
-      >
-        {sensor.spec.unit}
-      </text>
+      {spec && (
+        <text
+          x={PAD_L - 36}
+          y={PAD_T + 2}
+          fontFamily="var(--font-mono)"
+          fontSize={9}
+          fill="var(--ink-muted)"
+        >
+          {spec.unit}
+        </text>
+      )}
 
-      {/* X axis window */}
       {pts.length > 1 && (
         <>
           <text
@@ -124,7 +138,11 @@ export default function HistoryChart({ sensor }: { sensor: SensorState | undefin
           fontSize={12}
           fill="var(--ink-muted)"
         >
-          Warming up — waiting for samples from {sensor.spec.id}…
+          {status === "loading"
+            ? `Fetching history for ${spec?.sensorId ?? ""}…`
+            : status === "error"
+              ? "Backend error while fetching history."
+              : `No history yet for ${spec?.sensorId ?? "this sensor"}.`}
         </text>
       )}
 
@@ -139,7 +157,6 @@ export default function HistoryChart({ sensor }: { sensor: SensorState | undefin
             strokeLinejoin="round"
             strokeLinecap="round"
           />
-          {/* last-point marker */}
           {(() => {
             const p = pts[pts.length - 1];
             return (
@@ -162,19 +179,19 @@ export default function HistoryChart({ sensor }: { sensor: SensorState | undefin
   );
 }
 
-function computeBounds(sensor: SensorState | undefined) {
-  if (!sensor || sensor.history.length === 0) {
+function computeBounds(pts: Reading[], spec: SensorStatus | null) {
+  if (pts.length === 0) {
     return {
-      min: sensor?.spec.min ?? 0,
-      max: sensor?.spec.max ?? 1,
+      min: spec?.minValue ?? 0,
+      max: spec?.maxValue ?? 1,
       xMin: Date.now() - 60_000,
       xMax: Date.now(),
     };
   }
-  const values = sensor.history.map((h) => h.value);
-  const times = sensor.history.map((h) => h.timestamp);
-  const rawMin = Math.min(...values, sensor.spec.min);
-  const rawMax = Math.max(...values, sensor.spec.max);
+  const values = pts.map((h) => h.value);
+  const times = pts.map((h) => h.timestamp);
+  const rawMin = Math.min(...values, spec?.minValue ?? Infinity);
+  const rawMax = Math.max(...values, spec?.maxValue ?? -Infinity);
   const pad = (rawMax - rawMin) * 0.08;
   return {
     min: rawMin - pad,

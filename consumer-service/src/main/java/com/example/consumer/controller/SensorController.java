@@ -10,6 +10,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/sensors")
+@CrossOrigin // dev convenience; this service has no authenticated endpoints
 public class SensorController {
 
     private final SensorDataRepository repository;

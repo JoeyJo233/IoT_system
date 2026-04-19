@@ -1,31 +1,51 @@
-import { useEffect, useState } from "react";
-import type { SensorState } from "../types";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { Reading, SensorStatus } from "../api/types";
 import { TYPE_META } from "../data/sensors";
 
 interface Props {
-  state: SensorState;
+  spec: SensorStatus;
+  reading: Reading | null;
   selected?: boolean;
   onClick?: () => void;
+  lastPollOk?: boolean;
 }
 
-export default function LatestCard({ state, selected, onClick }: Props) {
-  const { spec, latest, history, running } = state;
-  const meta = TYPE_META[spec.type];
+/**
+ * Shows the latest reading for a single sensor. Keeps a tiny in-memory
+ * ring buffer of recent readings (driven by parent polls) so the sparkline
+ * has something to draw without spending an extra /history request.
+ */
+export default function LatestCard({
+  spec,
+  reading,
+  selected,
+  onClick,
+  lastPollOk = true,
+}: Props) {
+  const meta = TYPE_META[spec.sensorType];
+  const bufferRef = useRef<Reading[]>([]);
   const [pulse, setPulse] = useState(false);
 
-  // Trigger freshness tick on new reading
+  // Push new, unique readings into the sparkline buffer.
   useEffect(() => {
-    if (!latest) return;
-    setPulse(true);
-    const h = window.setTimeout(() => setPulse(false), 250);
-    return () => clearTimeout(h);
-  }, [latest?.timestamp]);
+    if (!reading) return;
+    const buf = bufferRef.current;
+    const last = buf[buf.length - 1];
+    if (!last || last.timestamp !== reading.timestamp) {
+      buf.push(reading);
+      if (buf.length > 32) buf.shift();
+      setPulse(true);
+      const h = window.setTimeout(() => setPulse(false), 260);
+      return () => clearTimeout(h);
+    }
+  }, [reading?.timestamp]);
 
-  const displayValue = latest?.value ?? spec.min;
+  const series = useMemo(() => bufferRef.current.slice(), [reading?.timestamp]);
+  const hot = spec.sensorType === "VIBRATION";
 
   return (
     <article
-      className={`reading-card ${spec.hot ? "reading-card--hot" : ""}`}
+      className={`reading-card ${hot ? "reading-card--hot" : ""} ${!spec.running ? "reading-card--paused" : ""}`}
       onClick={onClick}
       style={
         {
@@ -33,6 +53,7 @@ export default function LatestCard({ state, selected, onClick }: Props) {
           cursor: onClick ? "pointer" : "default",
           outline: selected ? `2px solid ${meta.color}` : "none",
           outlineOffset: selected ? "-2px" : "0",
+          opacity: spec.running ? 1 : 0.75,
         } as React.CSSProperties
       }
     >
@@ -43,33 +64,49 @@ export default function LatestCard({ state, selected, onClick }: Props) {
             className="reading-card__id"
             style={{ marginTop: 4, color: "var(--ink-muted)" }}
           >
-            {spec.id.replace("sensor-", "")}
+            {spec.sensorId.replace("sensor-", "")}
           </div>
         </div>
         <span
-          className={`pill ${running ? "ok" : "warn"}`}
+          className={`pill ${spec.running ? "ok" : "warn"}`}
           style={{ fontSize: 9 }}
         >
           <span className="dot" />
-          {running ? spec.location : "paused"}
+          {spec.running ? spec.location : "paused"}
         </span>
       </div>
 
       <div className="reading-card__value num">
-        {displayValue.toFixed(spec.type === "PRESSURE" ? 1 : 2)}
-        <small>{spec.unit}</small>
+        {reading ? (
+          <>
+            {reading.value.toFixed(spec.sensorType === "PRESSURE" ? 1 : 2)}
+            <small>{spec.unit}</small>
+          </>
+        ) : (
+          <>
+            <span style={{ color: "var(--ink-faint)" }}>—</span>
+            <small>{spec.unit}</small>
+          </>
+        )}
       </div>
 
       <div className="reading-card__spark">
-        <Spark history={history.slice(-32)} color={meta.color} min={spec.min} max={spec.max} />
+        <Spark
+          history={series}
+          color={meta.color}
+          min={spec.minValue}
+          max={spec.maxValue}
+        />
       </div>
 
       <div className="reading-card__foot">
         <span>
-          {meta.cadence} · n={state.count.toLocaleString()}
+          {formatCadence(spec.intervalMs)} ·{" "}
+          {reading ? `+${sinceLabel(reading.timestamp)}` : "no data"}
         </span>
         <span
           className={`reading-card__tick ${pulse ? "fresh" : ""}`}
+          title={lastPollOk ? "last poll ok" : "last poll failed"}
           aria-hidden
         />
       </div>
@@ -83,7 +120,7 @@ function Spark({
   min,
   max,
 }: {
-  history: { value: number }[];
+  history: Reading[];
   color: string;
   min: number;
   max: number;
@@ -91,7 +128,14 @@ function Spark({
   if (history.length < 2) {
     return (
       <svg viewBox="0 0 120 32" width="100%" height="32" preserveAspectRatio="none">
-        <line x1={0} y1={16} x2={120} y2={16} stroke="var(--rule)" strokeDasharray="2 3" />
+        <line
+          x1={0}
+          y1={16}
+          x2={120}
+          y2={16}
+          stroke="var(--rule)"
+          strokeDasharray="2 3"
+        />
       </svg>
     );
   }
@@ -114,18 +158,17 @@ function Spark({
     .map((p) => p.replace(",", " "))
     .join(" L ")} L ${w},${h} Z`;
 
+  const gradId = `grad-${color.replace(/[^a-z0-9]/gi, "")}`;
+
   return (
     <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={h} preserveAspectRatio="none">
       <defs>
-        <linearGradient id={`grad-${color.replace(/[^a-z0-9]/gi, "")}`} x1="0" y1="0" x2="0" y2="1">
+        <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor={color} stopOpacity={0.22} />
           <stop offset="100%" stopColor={color} stopOpacity={0} />
         </linearGradient>
       </defs>
-      <path
-        d={areaPath}
-        fill={`url(#grad-${color.replace(/[^a-z0-9]/gi, "")})`}
-      />
+      <path d={areaPath} fill={`url(#${gradId})`} />
       <polyline
         fill="none"
         stroke={color}
@@ -136,4 +179,17 @@ function Spark({
       />
     </svg>
   );
+}
+
+function formatCadence(ms: number) {
+  if (ms >= 1000) return `${ms / 1000}s`;
+  return `${ms}ms`;
+}
+
+function sinceLabel(ts: number) {
+  const diff = Date.now() - ts;
+  if (diff < 1000) return `${diff}ms`;
+  if (diff < 60_000) return `${(diff / 1000).toFixed(1)}s`;
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m`;
+  return `${Math.floor(diff / 3_600_000)}h`;
 }

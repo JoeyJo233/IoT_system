@@ -36,10 +36,17 @@
   --node-mongo: #2f7a5c;
   --node-mongo-soft: #cfe2d7;
 
-  /* typography */
+  /* typography
+     Mono face prefers JetBrainsMono Nerd Font (box-drawing + dev icons).
+     If the user hasn't installed it locally, we fall back through its
+     common alias, then the Google-fonts-served plain JetBrains Mono,
+     then system mono.
+  */
   --font-display: "Fraunces", "Iowan Old Style", "Palatino", serif;
   --font-body: "Geist", "Inter", "Helvetica Neue", sans-serif;
-  --font-mono: "JetBrains Mono", "SF Mono", Menlo, monospace;
+  --font-mono: "JetBrainsMono Nerd Font", "JetBrainsMonoNL Nerd Font",
+    "JetBrainsMono NF", "JetBrains Mono", ui-monospace, "SF Mono", Menlo,
+    Consolas, monospace;
 
   /* shadows */
   --shadow-sm: 0 1px 0 rgba(26, 21, 18, 0.04), 0 1px 2px rgba(26, 21, 18, 0.04);
@@ -66,14 +73,14 @@ body,
 body {
   font-family: var(--font-body);
   font-weight: 400;
-  font-size: 14px;
-  line-height: 1.55;
+  font-size: 15px;
+  line-height: 1.6;
   color: var(--ink);
   background: var(--cream);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
-  letter-spacing: -0.005em;
+  letter-spacing: -0.003em;
   /* subtle paper grain */
   background-image:
     radial-gradient(at 18% 12%, rgba(204, 120, 92, 0.06) 0, transparent 38%),
@@ -419,11 +426,11 @@ code,
 
 .flow-hero h1 {
   font-family: var(--font-display);
-  font-size: clamp(40px, 5vw, 62px);
-  font-weight: 400;
-  line-height: 1.02;
-  letter-spacing: -0.035em;
-  font-variation-settings: "opsz" 144;
+  font-size: clamp(32px, 4.2vw, 52px);
+  font-weight: 450;
+  line-height: 1.06;
+  letter-spacing: -0.028em;
+  font-variation-settings: "opsz" 120;
 }
 
 .flow-hero h1 em {
@@ -433,14 +440,13 @@ code,
 }
 
 .flow-hero__lede {
-  font-family: var(--font-display);
-  font-weight: 300;
-  font-size: 17px;
-  line-height: 1.55;
+  font-family: var(--font-body);
+  font-weight: 400;
+  font-size: 15.5px;
+  line-height: 1.65;
   color: var(--ink-soft);
-  max-width: 46ch;
+  max-width: 52ch;
   margin-top: 22px;
-  font-variation-settings: "opsz" 48;
 }
 
 .flow-hero__stats {
@@ -1572,4 +1578,89 @@ code,
     animation-duration: 0.001ms !important;
     transition-duration: 0.001ms !important;
   }
+}
+
+/* -------------------------------------------------------------
+   Backend connectivity banner (Data Screen)
+   ------------------------------------------------------------- */
+.backend-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 18px 16px;
+  margin: 0 0 20px;
+  border-radius: 12px;
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+
+.backend-banner__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-muted);
+}
+
+.backend-banner__title .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ink-muted);
+}
+
+.backend-banner__body code {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  padding: 1px 6px;
+  background: var(--cream-2);
+  border-radius: 4px;
+  color: var(--ink);
+}
+
+.backend-banner--error {
+  border-color: rgba(178, 84, 66, 0.35);
+  background: rgba(178, 84, 66, 0.08);
+}
+.backend-banner--error .backend-banner__title {
+  color: var(--err);
+}
+.backend-banner--error .backend-banner__title .dot {
+  background: var(--err);
+  box-shadow: 0 0 0 4px rgba(178, 84, 66, 0.18);
+}
+
+.backend-banner--warn {
+  border-color: rgba(196, 138, 43, 0.4);
+  background: rgba(196, 138, 43, 0.08);
+}
+.backend-banner--warn .backend-banner__title {
+  color: var(--warn);
+}
+.backend-banner--warn .backend-banner__title .dot {
+  background: var(--warn);
+}
+
+.backend-banner--info {
+  border-style: dashed;
+  color: var(--ink-muted);
+}
+.backend-banner--info .backend-banner__title {
+  color: var(--ink-muted);
+}
+.backend-banner--info .backend-banner__title .dot {
+  background: var(--ink-faint);
+  animation: pulseDot 1.6s ease-in-out infinite;
+}
+
+@keyframes pulseDot {
+  0%, 100% { opacity: 0.6; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.3); }
 }

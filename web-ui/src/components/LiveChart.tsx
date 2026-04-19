@@ -1,12 +1,10 @@
 import { useMemo } from "react";
 import { ALL_TYPES, TYPE_META } from "../data/sensors";
-import type { SensorType } from "../types";
+import type { Reading, SensorType } from "../api/types";
 
-interface Snapshot {
-  sensors: Record<
-    string,
-    { history: { value: number; timestamp: number }[]; spec: { type: SensorType; min: number; max: number } }
-  >;
+interface Props {
+  byType: Record<SensorType, Reading[]>;
+  ranges: Record<SensorType, { min: number; max: number }>;
 }
 
 const W = 720;
@@ -16,19 +14,21 @@ const PAD_R = 12;
 const PAD_T = 14;
 const PAD_B = 28;
 
-export default function LiveChart({ state }: { state: Snapshot }) {
-  const series = useMemo(() => buildSeries(state), [state]);
+export default function LiveChart({ byType, ranges }: Props) {
+  const series = useMemo(() => buildSeries(byType, ranges), [byType, ranges]);
 
-  const xMin = series.xMin;
-  const xMax = series.xMax;
   const plotW = W - PAD_L - PAD_R;
   const plotH = H - PAD_T - PAD_B;
-
   const yTicks = 4;
 
+  const totalPoints = Object.values(byType).reduce((acc, s) => acc + s.length, 0);
+
   return (
-    <svg className="chart-svg" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
-      {/* Y grid */}
+    <svg
+      className="chart-svg"
+      viewBox={`0 0 ${W} ${H}`}
+      preserveAspectRatio="none"
+    >
       {[...Array(yTicks + 1)].map((_, i) => {
         const y = PAD_T + (plotH * i) / yTicks;
         return (
@@ -44,7 +44,6 @@ export default function LiveChart({ state }: { state: Snapshot }) {
         );
       })}
 
-      {/* Y labels (normalized 0–100%) */}
       {[0, 25, 50, 75, 100].map((p, i) => {
         const y = PAD_T + plotH - (plotH * i) / 4;
         return (
@@ -62,7 +61,6 @@ export default function LiveChart({ state }: { state: Snapshot }) {
         );
       })}
 
-      {/* Axis labels */}
       <text
         x={PAD_L - 32}
         y={PAD_T + 4}
@@ -82,22 +80,25 @@ export default function LiveChart({ state }: { state: Snapshot }) {
       >
         now
       </text>
-      <text
-        x={PAD_L}
-        y={H - 8}
-        fontFamily="var(--font-mono)"
-        fontSize={9}
-        fill="var(--ink-muted)"
-      >
-        −{Math.round((xMax - xMin) / 1000)}s
-      </text>
 
-      {/* Type series */}
+      {totalPoints < 2 && (
+        <text
+          x={W / 2}
+          y={H / 2}
+          textAnchor="middle"
+          fontFamily="var(--font-body)"
+          fontSize={12}
+          fill="var(--ink-muted)"
+        >
+          Waiting for the first few polls of /api/sensors/*/latest…
+        </text>
+      )}
+
       {ALL_TYPES.map((t) => {
         const s = series.byType[t];
         if (!s || s.length < 2) return null;
         const meta = TYPE_META[t];
-        const path = buildPath(s, xMin, xMax, plotW, plotH);
+        const path = buildPath(s, series.xMin, series.xMax, plotW, plotH);
         return (
           <g key={t}>
             <path
@@ -115,26 +116,28 @@ export default function LiveChart({ state }: { state: Snapshot }) {
                     : "none",
               }}
             />
-            {/* last-point marker */}
-            {s.length > 0 &&
-              (() => {
-                const last = s[s.length - 1];
-                const x = PAD_L + ((last.timestamp - xMin) / (xMax - xMin || 1)) * plotW;
-                const y = PAD_T + plotH - last.normalized * plotH;
-                return (
-                  <g>
-                    <circle cx={x} cy={y} r={3} fill={meta.color} />
-                    <circle
-                      cx={x}
-                      cy={y}
-                      r={6}
-                      fill="none"
-                      stroke={meta.color}
-                      strokeOpacity={0.25}
-                    />
-                  </g>
-                );
-              })()}
+            {(() => {
+              const last = s[s.length - 1];
+              const x =
+                PAD_L +
+                ((last.timestamp - series.xMin) /
+                  (series.xMax - series.xMin || 1)) *
+                  plotW;
+              const y = PAD_T + plotH - last.normalized * plotH;
+              return (
+                <g>
+                  <circle cx={x} cy={y} r={3} fill={meta.color} />
+                  <circle
+                    cx={x}
+                    cy={y}
+                    r={6}
+                    fill="none"
+                    stroke={meta.color}
+                    strokeOpacity={0.25}
+                  />
+                </g>
+              );
+            })()}
           </g>
         );
       })}
@@ -142,8 +145,11 @@ export default function LiveChart({ state }: { state: Snapshot }) {
   );
 }
 
-function buildSeries(state: Snapshot) {
-  const byType: Record<SensorType, { timestamp: number; normalized: number }[]> = {
+function buildSeries(
+  byType: Record<SensorType, Reading[]>,
+  ranges: Record<SensorType, { min: number; max: number }>,
+) {
+  const result: Record<SensorType, { timestamp: number; normalized: number }[]> = {
     TEMPERATURE: [],
     HUMIDITY: [],
     PRESSURE: [],
@@ -153,27 +159,23 @@ function buildSeries(state: Snapshot) {
   let xMin = Infinity;
   let xMax = -Infinity;
 
-  for (const s of Object.values(state.sensors)) {
-    const { type, min, max } = s.spec;
+  for (const t of ALL_TYPES) {
+    const { min, max } = ranges[t];
     const span = max - min || 1;
-    for (const h of s.history) {
-      const n = Math.max(0, Math.min(1, (h.value - min) / span));
-      byType[type].push({ timestamp: h.timestamp, normalized: n });
-      if (h.timestamp < xMin) xMin = h.timestamp;
-      if (h.timestamp > xMax) xMax = h.timestamp;
+    for (const r of byType[t]) {
+      const n = Math.max(0, Math.min(1, (r.value - min) / span));
+      result[t].push({ timestamp: r.timestamp, normalized: n });
+      if (r.timestamp < xMin) xMin = r.timestamp;
+      if (r.timestamp > xMax) xMax = r.timestamp;
     }
+    result[t].sort((a, b) => a.timestamp - b.timestamp);
   }
-
-  // sort each series by timestamp so the polyline is continuous
-  (Object.keys(byType) as SensorType[]).forEach((t) => {
-    byType[t].sort((a, b) => a.timestamp - b.timestamp);
-  });
 
   if (!isFinite(xMin)) xMin = Date.now() - 30_000;
   if (!isFinite(xMax)) xMax = Date.now();
-  if (xMax - xMin < 5000) xMax = xMin + 5000;
+  if (xMax - xMin < 5_000) xMax = xMin + 5_000;
 
-  return { byType, xMin, xMax };
+  return { byType: result, xMin, xMax };
 }
 
 function buildPath(

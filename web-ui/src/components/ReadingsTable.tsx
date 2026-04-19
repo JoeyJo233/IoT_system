@@ -1,7 +1,13 @@
-import type { Reading } from "../types";
+import type { Reading } from "../api/types";
 import { TYPE_META } from "../data/sensors";
 
-export default function ReadingsTable({ readings }: { readings: Reading[] }) {
+interface Props {
+  readings: Reading[];
+  loading?: boolean;
+  error?: Error | null;
+}
+
+export default function ReadingsTable({ readings, loading, error }: Props) {
   return (
     <div style={{ overflowX: "auto" }}>
       <table className="readings-table">
@@ -27,7 +33,11 @@ export default function ReadingsTable({ readings }: { readings: Reading[] }) {
                   color: "var(--ink-muted)",
                 }}
               >
-                Warming up…
+                {loading
+                  ? "Loading…"
+                  : error
+                    ? `Backend error: ${error.message}`
+                    : "No readings yet. Start the simulation on the producer."}
               </td>
             </tr>
           )}
@@ -36,7 +46,7 @@ export default function ReadingsTable({ readings }: { readings: Reading[] }) {
             const next = readings[i + 1];
             const dt = next ? r.timestamp - next.timestamp : 0;
             return (
-              <tr key={`${r.sensorId}-${r.timestamp}`}>
+              <tr key={`${r.sensorId}-${r.timestamp}-${i}`}>
                 <td>{formatTime(r.timestamp)}</td>
                 <td>
                   <span
